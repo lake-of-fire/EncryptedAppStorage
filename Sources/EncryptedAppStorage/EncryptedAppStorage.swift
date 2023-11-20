@@ -18,7 +18,9 @@ public struct EncryptedAppStorage<Value: Codable>: DynamicProperty {
         } else if let jsonData = try? JSONEncoder().encode(value) {
             // If there is no value in KeyChain associated with this key,
             // save the default value data to KeyChain
-            KeyChain.saveData(jsonData, with: key)
+            Task.detached {
+                KeyChain.saveData(jsonData, with: key)
+            }
         }
 
         self._value = State<Value?>(initialValue: initialValue)
@@ -30,13 +32,15 @@ public struct EncryptedAppStorage<Value: Codable>: DynamicProperty {
         nonmutating set {
             value = newValue
 
-            if value == nil { // Remove item
-                KeyChain.removeValue(with: key)
-            } else { // Update item
-                guard let data = try? JSONEncoder().encode(value) else {
-                    return
+            Task.detached {
+                if value == nil { // Remove item
+                    KeyChain.removeValue(with: key)
+                } else { // Update item
+                    guard let data = try? JSONEncoder().encode(value) else {
+                        return
+                    }
+                    KeyChain.saveData(data, with: key)
                 }
-                KeyChain.saveData(data, with: key)
             }
         }
     }
