@@ -1,53 +1,50 @@
-//
-//  File.swift
-//  
-//
-//  Created by KhuongPham on 13/04/2022.
-//
-
 import Foundation
-import Security
+import Combine
+import KeychainAccess
 
-class KeyChain {
-    @discardableResult
-    class func saveData(_ data: Data, with key: String) -> OSStatus {
-        let query = [
-            String(kSecClass): kSecClassGenericPassword as String,
-            String(kSecAttrAccount): key,
-            String(kSecValueData): data
-        ] as CFDictionary
-
-        SecItemDelete(query)
-
-        return SecItemAdd(query, nil)
-    }
-
-    class func loadData(with key: String) -> Data? {
-        let query = [
-            String(kSecClass): kSecClassGenericPassword,
-            String(kSecAttrAccount): key,
-            String(kSecReturnData): kCFBooleanTrue!,
-            String(kSecMatchLimit): kSecMatchLimitOne
-        ] as CFDictionary
-
-        var dataTypeRef: AnyObject?
-
-        let status = SecItemCopyMatching(query, &dataTypeRef)
-
-        if status == noErr, let data = dataTypeRef as? Data {
-            return data
-        } else {
-            return nil
+final class KeychainStorage<Value: Codable>: ObservableObject {
+    var value: Value {
+        set {
+            objectWillChange.send()
+            save(newValue)
         }
+        get { fetch() }
     }
 
-    @discardableResult
-    class func removeValue(with key: String) -> OSStatus {
-        let query = [
-          kSecClass: kSecClassGenericPassword,
-          kSecAttrAccount: key
-        ] as CFDictionary
+    let objectWillChange = PassthroughSubject<Void, Never>()
 
-        return SecItemDelete(query)
+    private let key: String
+    private let defaultValue: Value
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
+
+    private let keychain: Keychain
+
+    init(defaultValue: Value, for key: String) {
+        self.defaultValue = defaultValue
+        self.key = key
+
+        keychain = Keychain(service: Bundle.main.bundleIdentifier ?? "warehouse")
+            .synchronizable(true)
+            .accessibility(.always)
+    }
+
+    private func save(_ newValue: Value) {
+        guard let data = try? encoder.encode(newValue) else {
+            return
+        }
+
+        try? keychain.set(data, key: key)
+    }
+
+    private func fetch() -> Value {
+        guard
+            let data = try? keychain.getData(key),
+            let freshValue = try? decoder.decode(Value.self, from: data)
+        else {
+            return defaultValue
+        }
+
+        return freshValue
     }
 }

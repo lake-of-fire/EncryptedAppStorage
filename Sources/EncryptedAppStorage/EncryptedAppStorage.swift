@@ -1,54 +1,31 @@
+import Foundation
+import Combine
+import KeychainAccess
 import SwiftUI
 
 @propertyWrapper
-public struct EncryptedAppStorage<Value: Codable>: DynamicProperty {
-    private let key: String
-    @State private var value: Value?
+public struct SecureStorage<Value: Codable>: DynamicProperty {
 
-    public init(wrappedValue: Value? = nil, _ key: String) {
-        self.key = key
-        // Set default value
-        var initialValue = wrappedValue
+    private let publisher = PassthroughSubject<Value, Never>()
+    @ObservedObject private var storage: KeychainStorage<Value>
 
-        // Retrieve value from Keychain
-        if let data = KeyChain.loadData(with: key),
-           let decoded = try? JSONDecoder().decode(Value.self, from: data) {
-            // Assign value from keychain
-            initialValue = decoded
-        } else if let jsonData = try? JSONEncoder().encode(value) {
-            // If there is no value in KeyChain associated with this key,
-            // save the default value data to KeyChain
-            Task.detached {
-                KeyChain.saveData(jsonData, with: key)
-            }
-        }
-
-        self._value = State<Value?>(initialValue: initialValue)
-    }
-
-    public var wrappedValue: Value? {
-        get { value }
+    public var wrappedValue: Value {
+        get { storage.value }
 
         nonmutating set {
-            value = newValue
-
-            Task.detached {
-                if value == nil { // Remove item
-                    KeyChain.removeValue(with: key)
-                } else { // Update item
-                    guard let data = try? JSONEncoder().encode(value) else {
-                        return
-                    }
-                    KeyChain.saveData(data, with: key)
-                }
-            }
+            storage.value = newValue
+            publisher.send(newValue)
         }
     }
 
-    public var projectedValue: Binding<Value?> {
-        .init(
-            get: { wrappedValue },
-            set: { wrappedValue = $0 }
+    init(wrappedValue: Value, _ key: String) {
+        storage = KeychainStorage(
+            defaultValue: wrappedValue,
+            for: key
         )
+    }
+
+    public var projectedValue: AnyPublisher<Value, Never> {
+        publisher.eraseToAnyPublisher()
     }
 }
