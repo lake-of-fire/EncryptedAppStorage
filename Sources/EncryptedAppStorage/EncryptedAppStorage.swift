@@ -17,7 +17,7 @@ public struct EncryptedAppStorage<Value: Codable>: DynamicProperty {
         }
     }
     
-    init(wrappedValue: Value, _ key: String) {
+    public init(wrappedValue: Value, _ key: String) {
         storage = KeychainStorage(
             defaultValue: wrappedValue,
             for: key
